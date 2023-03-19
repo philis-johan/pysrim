@@ -68,7 +68,7 @@ class SRIM_Output(object):
         match = re.search(b'Total Ions calculated\s+=(\d+.\d+)', output)
         if match:
             # Cast string -> float -> round down to nearest int
-            return int(float(match.group(1)))
+            return int(float(match.group(1).replace(b',', b'.')))
         raise SRIMOutputParseError("unable to extract total ions from file")
 
     def _read_table(self, output):
@@ -83,7 +83,8 @@ class SRIM_Output(object):
             header = None
 
             # Data
-            data = np.genfromtxt(BytesIO(output[match.end():]), max_rows=100)
+            # data = np.genfromtxt(BytesIO(output[match.end():].replace(b",",b".")), max_rows=1e6)
+            data = np.genfromtxt(BytesIO(output[match.end():].replace(b",",b".")), max_rows=100)
             return data
         raise SRIMOutputParseError("unable to extract table from file")
 
@@ -119,6 +120,7 @@ class Results(object):
         self.etorecoils = EnergyToRecoils(directory)
         self.phonons = Phonons(directory)
         self.range = Range(directory)
+        self.exyz = EXYZ(directory)
 
 
 class Ioniz(SRIM_Output):
@@ -438,6 +440,102 @@ class Range(SRIM_Output):
         """Per elements [(Atoms/cm3)/(Atoms/cm2)] distribution of each element"""
         return self._elements
 
+
+class EXYZ(SRIM_Output):
+    """``EXYZ.txt`` Ionization by ions and depth. Includes header information about calculation
+
+    Parameters
+    ----------
+    directory : :obj:`str`
+         directory of calculation
+    filename : :obj:`str`, optional
+         filename for EXYZ. Default ``EXYZ.txt``
+    """
+    def __init__(self, directory, filename='EXYZ.txt'):
+        with open(os.path.join(os.path.join(directory,"SRIM Outputs"), filename), 'rb') as f:
+            output = f.read()
+            ion = None
+            # ion = self._read_ion(output)
+            num_ions = None
+            # num_ions = self._read_num_ions(output)
+            data = self._read_table(output)
+
+        self._ion = ion
+        self._num_ions = num_ions
+        self._ion_number = data[:, 0]
+        self._energy = data[:, 1]
+        self._depth = data[:, 2]
+        self._y = data[:, 3]
+        self._z = data[:, 4]
+        self._electronic_stop = data[:, 5]
+        self._recoil_energy_loss = data[:, 6]
+
+
+    def _read_table(self, output):
+        """Read table from output"""
+        match = re.search((
+            b'=+(.*)'
+            b'-+(?:\s+-+)+'
+        ), output, re.DOTALL)
+        # Read Data from table
+
+        if match:
+            # Headers TODO: name the columns in table
+            header = None
+
+            # Data
+            # data = np.genfromtxt(BytesIO(output[match.end():].replace(b",",b".")), max_rows=1e6)
+            data = np.genfromtxt(BytesIO(output[match.end():].replace(b",",b".")), max_rows=1e6)
+            return data
+        raise SRIMOutputParseError("unable to extract table from file")
+
+    @property
+    def ion(self):
+        """ Ion used in SRIM calculation
+
+        **mass** could be wrong
+        """
+        return self._ion
+
+    @property
+    def num_ions(self):
+        """ Number of Ions in SRIM simulation """
+        return self._num_ions
+
+    @property
+    def ion_number(self):
+        """ Ion number in the simulation """
+        return self._ion_number
+    
+    @property
+    def energy(self):
+        """ Energy [eV] of the ion """
+        return self._energy
+    
+    @property
+    def depth(self):
+        """ Depth [Ang] of the ion """
+        return self._depth
+
+    @property
+    def y(self):
+        """ Y position [Ang] of the ion """
+        return self._y
+    
+    @property
+    def z(self):
+        """ Z position [Ang] of the ion """
+        return self._z
+    
+    @property
+    def electronic_stop(self):
+        """ Electronic stopping [eV/(Angstrom Ion)] of the ion """
+        return self._electronic_stop
+    
+    @property
+    def recoil_energy_loss(self):
+        """ Energy loss [eV/(Angstrom Ion)] of the recoil """
+        return self._recoil_energy_loss
 
 
 class Backscat(object):
